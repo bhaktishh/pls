@@ -69,9 +69,9 @@ module LamPi where
     subst i e (Var (Bound i')) = if i == i' then e else Var (Bound i')
     subst _ _ (Var x) = Var x
     subst i e (App e1 e2) = App (subst i e e1) (subst i e e2)
-    subst i e (Lam ty e') = Lam ty (subst (i+1) e e')
+    subst i e (Lam ty e') = Lam (subst i e ty) (subst (i+1) e e')
     subst _ _ Star = Star
-    subst i e (Forall ty e') = Forall ty (subst (i+1) e e')
+    subst i e (Forall ty e') = Forall (subst i e ty) (subst (i+1) e e')
 
     -- quote :: Val -> Expr
     -- quote = quote_ 0
