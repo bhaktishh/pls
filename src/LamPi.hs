@@ -33,28 +33,28 @@ module LamPi where
         _ -> undefined
     eval (Lam ty e) env = VLam (eval ty env) (\x -> eval e (x : env))
 
-    type Ctx = [(String, Val)]
+    type Ctx = [Val]
 
     fresh :: [String] -> String 
     fresh xs = 'x' : concat xs
 
     typeinfer :: Expr -> Ctx -> Either String Val 
     typeinfer Star _ = Right VStar
-    typeinfer (Var (Free str)) ctx = case lookup str ctx of
-        Just v -> Right v 
-        _ -> Left "var not in context"
+    typeinfer (Var (Bound i)) ctx = Right (ctx !! i)
     typeinfer (Var _) _= Left ":("
     typeinfer (Forall e e') ctx = case typeinfer e ctx of 
         Right VStar -> 
-            let t = eval e []
-                var = fresh (map fst ctx) in
-                    typeinfer (subst 0 (Var (Free var)) e') ((var, t) : ctx)
+            let t = eval e ctx in
+                typeinfer e' (t : ctx) -- todo 
         _ -> Left "dependent var not type"
-    typeinfer (Lam t_ e) ctx = let var = fresh (map fst ctx) 
-                                   t = eval t_ [] in 
-        case typeinfer (subst 0 (Var (Free var)) e) ((var, t) : ctx) of 
-            Right t' -> undefined -- somw way to go from Val to (Val -> Val) -- horrible idea: (\x -> subst' var x t')
-            _ -> Left "could not check lambda"
+    typeinfer (Lam t_ e) ctx = do 
+        let t = eval t_ ctx
+        tbody <- typeinfer e (t : ctx)
+        let qbody = quote tbody in 
+            Right $ eval (Forall (quote t) qbody) ctx
+        -- case typeinfer (subst 0 (Var (Free var)) e) ((var, t) : ctx) of 
+        --     Right t' -> undefined -- somw way to go from Val to (Val -> Val) -- horrible idea: (\x -> subst' var x t')
+        --     _ -> Left "could not check lambda"
     typeinfer (App e e') ctx = case typeinfer e ctx of
         Right (VForall t t') -> undefined
         _ -> undefined
@@ -73,18 +73,18 @@ module LamPi where
     subst _ _ Star = Star
     subst i e (Forall ty e') = Forall (subst i e ty) (subst (i+1) e e')
 
-    -- quote :: Val -> Expr
-    -- quote = quote_ 0
+    quote :: Val -> Expr
+    quote = quote_ 0
 
-    -- quote_ :: Int -> Val -> Expr 
-    -- quote_ i (VNeut n) = quoteNeutral i n
-    -- quote_ i (VLam ty f) = 
-    --     let e = quote_ (i+1) (f (VNeut (NVar (Quote i)))) in
-    --         Lam ty e
+    quote_ :: Int -> Val -> Expr 
+    quote_ i (VNeut n) = quoteNeutral i n
+    quote_ i (VLam ty f) = 
+        let e = quote_ (i+1) (f (VNeut (NVar (Quote i)))) in
+            Lam ty e
 
-    -- quoteNeutral :: Int -> Neut -> Expr 
-    -- quoteNeutral i (NVar v) = conv i v 
-    -- quoteNeutral i (NApp n v) = App (quoteNeutral i n) (quote_ i v)
+    quoteNeutral :: Int -> Neut -> Expr 
+    quoteNeutral i (NVar v) = conv i v 
+    quoteNeutral i (NApp n v) = App (quoteNeutral i n) (quote_ i v)
 
     -- conv :: Int -> Var -> Expr 
     -- conv i (Quote i') = Var (Bound (i - i' - 1))
