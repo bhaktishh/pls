@@ -35,8 +35,10 @@ module LamPi where
 
     type Ctx = [Val]
 
-    fresh :: [String] -> String 
-    fresh xs = 'x' : concat xs
+    typecheck :: Expr -> Ctx -> Either String Expr 
+    typecheck expr ctx = do 
+        t <- typeinfer expr ctx 
+        Right (quote t)
 
     typeinfer :: Expr -> Ctx -> Either String Val 
     typeinfer Star _ = Right VStar
@@ -52,40 +54,22 @@ module LamPi where
         tbody <- typeinfer e (t : ctx)
         let qbody = quote tbody in 
             Right $ eval (Forall (quote t) qbody) ctx
-        -- case typeinfer (subst 0 (Var (Free var)) e) ((var, t) : ctx) of 
-        --     Right t' -> undefined -- somw way to go from Val to (Val -> Val) -- horrible idea: (\x -> subst' var x t')
-        --     _ -> Left "could not check lambda"
     typeinfer (App e e') ctx = case typeinfer e ctx of
-        Right (VForall t t') -> undefined
-        _ -> undefined
-
-
-    subst' :: String -> Val -> Val -> Val
-    subst' = undefined 
-    -- how would you even do subst' _ x (VLam | VForall) ??
-
-
-    subst :: Int -> Expr -> Expr -> Expr
-    subst i e (Var (Bound i')) = if i == i' then e else Var (Bound i')
-    subst _ _ (Var x) = Var x
-    subst i e (App e1 e2) = App (subst i e e1) (subst i e e2)
-    subst i e (Lam ty e') = Lam (subst i e ty) (subst (i+1) e e')
-    subst _ _ Star = Star
-    subst i e (Forall ty e') = Forall (subst i e ty) (subst (i+1) e e')
+        Right (VForall t t') -> case typeinfer e' ctx of
+            Right t_ | quote t == quote t_ -> Right $ eval (quote (t' t)) ctx -- do we need some fancier unification here???
+            _ -> Left ":(("
+        _ -> Left "h"
 
     quote :: Val -> Expr
-    quote = quote_ 0
+    quote = quote_ 0 
 
-    quote_ :: Int -> Val -> Expr 
+    quote_ :: Int -> Val -> Expr
+    quote_ _ VStar = Star
     quote_ i (VNeut n) = quoteNeutral i n
-    quote_ i (VLam ty f) = 
-        let e = quote_ (i+1) (f (VNeut (NVar (Quote i)))) in
-            Lam ty e
+    quote_ i (VLam t f) = Lam (quote_ i t) (quote_ (i + 1) (f t))
+    quote_ i (VForall t f) = Forall (quote_ i t) (quote_ (i + 1) (f t))
 
     quoteNeutral :: Int -> Neut -> Expr 
-    quoteNeutral i (NVar v) = conv i v 
+    quoteNeutral i (NVar (Quote i')) = Var (Bound (i - i' - 1))
+    quoteNeutral _ (NVar v) = Var v
     quoteNeutral i (NApp n v) = App (quoteNeutral i n) (quote_ i v)
-
-    -- conv :: Int -> Var -> Expr 
-    -- conv i (Quote i') = Var (Bound (i - i' - 1))
-    -- conv _ x = Var x

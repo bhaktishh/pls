@@ -26,6 +26,7 @@ source-repository head
 library
   exposed-modules:
       LamPi
+      LamPi2
       Lib
       Stlc
   other-modules:
