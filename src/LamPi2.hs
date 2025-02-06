@@ -1,3 +1,4 @@
+{-# LANGUAGE BlockArguments #-}
 module LamPi2 where
 
     data Ty = BaseTy Var
@@ -12,7 +13,7 @@ module LamPi2 where
             deriving (Show, Eq)
 
     data Var = Bound Int
-            | Free Int 
+            | Free String 
             deriving (Show, Eq)
 
     data Val = VTy VTy
@@ -53,19 +54,24 @@ module LamPi2 where
         _ -> error "undefined application"
     eval (Lam t e) env = VLam (evalTy t env) (\x -> eval e (x : env))
 
-    type Ctx = [Ty] -- typing context
+    type Ctx = [(String, Ty)] -- typing context
+
+    fresh :: [(String, Ty)] -> String
+    fresh xs = 'x' : concatMap fst xs
 
     typeinfer :: Tm -> Ctx -> Either String Ty 
     typeinfer (Ty t) ctx = typeinferTy t ctx
-    typeinfer (Var (Free fv)) ctx = Right (ctx !! fv)
+    typeinfer (Var (Free fv)) ctx = case lookup fv ctx of 
+        Just ty -> Right ty
+        _ -> Left "free variable not in context"
     typeinfer (Var _) _ = error "bound var in typeinfer"
     typeinfer (App e e') ctx = case typeinfer e ctx of
         Right (Forall t1 t2) -> case typeinfer e' ctx of 
             Right t1' | unify t1 t1' -> Right $ tmToTy . quote $ eval (App (Ty t2) e') []
             _ -> error "could not unify types in app"
         _ -> error "ill-typed application"
-    typeinfer (Lam t e) ctx = let var = Free (length ctx) in 
-        case typeinfer (subst 0 (Var var) e) (ctx ++ [t]) of 
+    typeinfer (Lam t e) ctx = let var = fresh ctx in 
+        case typeinfer (subst 0 (Var (Free var)) e) ((var, t) : ctx) of 
             Right t' -> Right (Forall t t')
             _ -> error "nah"
 
@@ -73,18 +79,27 @@ module LamPi2 where
     typeinferTy Star _ = Right Star
     typeinferTy (BaseTy v) _ = Right (BaseTy v) -- todo
     typeinferTy (Forall p p') ctx = case typeinferTy p ctx of 
-        Right Star -> case evalTy p [] of
-            t -> case typeinferTy p' (quoteTy t : ctx) of 
-                Right Star -> Right Star
-                _ -> error " "
-        _ -> error " "
+        Right Star -> let
+            t = evalTy p []
+            x = fresh ctx in 
+                case typeinferTy (substTy 0 (Var (Free x)) p')
+    -- typeinferTy (Forall p p') ctx = case typeinferTy p ctx of 
+    --     Right Star -> case evalTy p [] of
+    --         t -> let var = fresh ctx in 
+    --                 case typeinferTy (tmToTy $ subst 0 (Var (Free var)) t) ((var, t) : ctx) of 
+    --                     Right Star -> Right Star
+    --                     _ -> error " "
+    --     _ -> error " "
 
     tmToTy :: Tm -> Ty
     tmToTy (Ty t) = t
     tmToTy _ = error "undefined"
 
     quote :: Val -> Tm
-    quote = undefined
+    quote (VTy vt) = Ty $ quoteTy vt
+    quote (VLam t f) = undefined 
+
+    quote _ = undefined 
 
     quoteTy :: VTy -> Ty 
     quoteTy = undefined
@@ -93,4 +108,4 @@ module LamPi2 where
     unify t1 t2 = quoteTy (evalTy t1 []) == quoteTy (evalTy t2 [])
 
     subst :: Int -> Tm -> Tm -> Tm 
-    subst = undefined 
+    subst = undefined  
