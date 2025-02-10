@@ -1,4 +1,4 @@
-module LamPi3 where 
+module LamPi3 (eval, typeinfer) where 
 
     data Tm = BaseTy String
             | Star 
@@ -10,6 +10,7 @@ module LamPi3 where
 
     data Var = Bound Int 
             | Free String 
+            | Quote Int
             deriving (Show, Eq)
 
     data Val = VStar
@@ -20,7 +21,7 @@ module LamPi3 where
 
     data Neut = NVar Var
                | NApp Neut Val
-               | NBaseTy Var
+               | NBaseTy String
 
     type Env = [Val] -- evaluation environment, variable assignments
 
@@ -44,9 +45,17 @@ module LamPi3 where
     fresh ctx = 'x' : concatMap fst ctx
 
     typeinfer :: Tm -> Ctx -> Either String Type
-    typeinfer (BaseTy t) _ = Right VStar  
+    typeinfer (BaseTy _) _ = Right VStar  
     typeinfer Star _ = Right VStar 
-    typeinfer (Forall p p') ctx = undefined 
+    typeinfer (Forall p p') ctx = case typeinfer p ctx of 
+        Right VStar -> let
+            t = eval p []
+            x = fresh ctx
+            p'' = subst 0 (Var (Free x)) p' in 
+                case typeinfer p'' ((x, t) : ctx) of
+                    Right VStar -> Right VStar
+                    _ -> Left "could not infer a type for body of forall"
+        _ -> Left "could not infer a type for argument of forall"
     typeinfer (Var (Free v)) ctx = case lookup v ctx of 
         Just t -> Right t
         Nothing -> Left "free variable not in context" 
@@ -65,10 +74,28 @@ module LamPi3 where
                 _ -> Left "could not infer a type for body of lambda"
 
     subst :: Int -> Tm -> Tm -> Tm   
-    subst i x e = undefined 
+    subst i x (Var (Bound j)) = if i == j then x else Var (Bound j)
+    subst i x (App e1 e2) = App (subst i x e1) (subst i x e2)
+    subst i x (Lam t e) = Lam (subst i x t) (subst (i+1) x e)
+    subst i x (Forall t t') = Forall (subst i x t) (subst (i+1) x t')
+    subst _ _ x = x
 
     quote :: Val -> Tm 
-    quote = undefined 
+    quote = quote_ 0
+
+    quote_ :: Int -> Val -> Tm
+    quote_ _ VStar = Star
+    quote_ i (VForall x f) = Forall (quote_ i x) (quote_ (i+1) (f (VNeut (NVar (Bound i)))))
+    quote_ i (VLam x f) = Lam (quote_ i x) (quote_ (i+1) (f (VNeut (NVar (Bound i)))))
+    quote_ i (VNeut n) = quoteNeutral i n 
+
+    quoteNeutral :: Int -> Neut -> Tm
+    quoteNeutral _ (NBaseTy str) = BaseTy str 
+    quoteNeutral i (NApp n v) = App (quoteNeutral i n) (quote_ i v)
+    quoteNeutral i (NVar (Quote x)) = Var (Bound (i - x - 1)) 
+    quoteNeutral _ (NVar x) = Var x
 
     unify :: Val -> Val -> Bool
-    unify = undefined
+    unify a b = quote a == quote b
+
+    -- parse

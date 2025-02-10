@@ -1,8 +1,4 @@
-module Stlc where
-
-    {-# OPTIONS_GHC -Wno-unused-top-binds #-}
-    {-# LANGUAGE OverloadedStrings #-}
-    {-# LANGUAGE RecordWildCards #-}
+module Stlc () where
     -- import Text.Megaparsec ( Parsec )
     -- import Data.Void
     -- import Data.Text (Text)
@@ -79,6 +75,7 @@ module Stlc where
     subst i e (App e1 e2) = App (subst i e e1) (subst i e e2)
     subst i e (Lam ty e') = Lam ty (subst (i+1) e e')
 
+    quote :: Val -> Expr
     quote = quote_ 0
 
     quote_ :: Int -> Val -> Expr
@@ -96,6 +93,8 @@ module Stlc where
     conv _ x = Var x
 
 
+    id' :: Expr
     id' = Lam (Base "int") (Var (Bound 0))
 
+    const' :: Expr
     const' = Lam (Func (Base "int") (Base "int")) (Lam (Base "int") (Var (Bound 1)))
