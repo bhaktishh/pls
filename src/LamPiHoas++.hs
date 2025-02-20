@@ -1,4 +1,4 @@
-module LamPi3 (eval, typeinfer) where 
+module LamPiHoas (eval, typeinfer) where 
 
     data Tm = BaseTy String
             | Star 
@@ -6,6 +6,10 @@ module LamPi3 (eval, typeinfer) where
             | Var Var 
             | App Tm Tm 
             | Lam Tm Tm 
+            | Nat
+            | Zero 
+            | Succ Tm 
+            | NatElim Tm Tm Tm Tm
             deriving (Show, Eq)
 
     data Var = Bound Int 
@@ -17,6 +21,9 @@ module LamPi3 (eval, typeinfer) where
               | VForall Val (Val -> Val)
               | VLam Val (Val -> Val)
               | VNeut Neut
+              | VZero
+              | VSucc Val
+              | VNat 
 
 
     data Neut = NVar Var
@@ -97,5 +104,3 @@ module LamPi3 (eval, typeinfer) where
 
     unify :: Val -> Val -> Bool
     unify a b = quote a == quote b
-
-    -- parse

@@ -1,9 +1,5 @@
 module Stlc () where
-    -- import Text.Megaparsec ( Parsec )
-    -- import Data.Void
-    -- import Data.Text (Text)
-    -- import qualified Data.Text as T
-    -- import Text.Megaparsec.Char
+
     data Expr = Var Var
                 | App Expr Expr
                 | Lam Ty Expr
