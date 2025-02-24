@@ -14,9 +14,11 @@ module LamPiHoas (eval, typeinfer) where
 
     -}
 
-    import Text.Megaparsec (Parsec)
+    import Text.Megaparsec (Parsec, many, notFollowedBy)
     import Data.Void (Void)
-    import Data.Text (Text)
+    import Data.Functor (($>))
+    import Text.Megaparsec.Char (char, string, lowerChar, upperChar, alphaNumChar)
+    import Control.Applicative ((<|>))
     
     data Tm = BaseTy String
             | Star 
@@ -25,9 +27,9 @@ module LamPiHoas (eval, typeinfer) where
             | App Tm Tm 
             | Lam Tm Tm 
             deriving (Show, Eq)
-            
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
     data Var = Bound Int 
-            | Free String 
+            | Free String
             | Quote Int
             deriving (Show, Eq)
 
@@ -118,8 +120,40 @@ module LamPiHoas (eval, typeinfer) where
     unify :: Val -> Val -> Bool
     unify a b = quote a == quote b
 
--- parser 
+-- parser
 
-    type Parser = Parsec Void Text 
-    
-     
+
+    data PTerm = PStar 
+                | PVar String 
+                | PApp PTerm PTerm
+                | PLam String PTerm PTerm 
+                | PForall String PTerm PTerm 
+                | PType String
+
+    type Parser = Parsec Void String 
+
+    pStar :: Parser Tm
+    pStar = char '*' $> Star 
+
+
+    pVar :: Parser PTerm
+    pVar = (PVar .) . (:) <$> lowerChar <*> many alphaNumChar
+
+    pType :: Parser PTerm 
+    pType = (PType .) . (:) <$> upperChar <*> many alphaNumChar  
+
+    pArrow :: Parser ()
+    pArrow = string "->" $> ()
+
+
+    pForallKW :: Parser ()
+    pForallKW = string "forall" <* notFollowedBy alphaNumChar $> () 
+
+    pLam :: Parser Tm 
+    pLam = undefined 
+
+    pTerm :: Parser Tm 
+    pTerm = 
+        pStar
+        <|> pLam 
+        <|> undefined 
