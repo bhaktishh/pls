@@ -1,4 +1,4 @@
-module LamPiHoasReal where
+module LamPiHoasRealNat where
     {-
         concrete syntax: 
         Terms:
@@ -96,6 +96,10 @@ module LamPiHoasReal where
             | Var Var 
             | App Term Term 
             | Lam String Term Term 
+            | TyNat 
+            | CZero
+            | CSucc Term 
+            | NatElim Term Term Term Term 
             deriving (Show, Eq)
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
     data Var = Bound Int 
@@ -107,11 +111,15 @@ module LamPiHoasReal where
               | VForall String Val (Val -> Val)
               | VLam String Val (Val -> Val)
               | VNeut Neut
+              | VNat 
+              | VZero 
+              | VSucc Val 
 
 
     data Neut = NVar Var
                | NApp Neut Val
                | NBaseTy String
+               | NNatElim Val Val Val Neut
 
     type Env = [Val] -- evaluation environment, variable assignments
 
@@ -127,6 +135,14 @@ module LamPiHoasReal where
         VForall _ _ f -> f (eval e' env)
         VStar -> error "applying Star"
     eval (Lam n t e) env = VLam n (eval t env) (\x -> eval e (x : env))
+    eval TyNat _ = VNat 
+    eval CZero _ = VZero 
+    eval (CSucc n) env = VSucc (eval n env)
+    eval (NatElim m mz ms k) env = case eval k env of
+        VZero -> eval mz env 
+        VSucc l -> undefined -- vapp alternative -- or should i just get it lol 
+
+
 
     type Type = Val 
     type Ctx = [(String, Val)] -- typing context
