@@ -24,10 +24,15 @@ module LamPiHoasRealNat where
                 | PLam String PTerm PTerm
                 | PForall String PTerm PTerm
                 | PType String
+                | PNat 
+                | PZero 
+                | PSucc PTerm 
+                | PNatElim PTerm PTerm PTerm PTerm 
+                | PDummy
                 deriving (Show, Eq)
 
     type Parser = Parsec Void String
-
+-- todo parse nats 
     tmParse :: String -> Tcm PTerm
     tmParse str = case parse pTerm "" str of 
         Left _ -> Left "parser error"
@@ -100,6 +105,7 @@ module LamPiHoasRealNat where
             | CZero
             | CSucc Term 
             | NatElim Term Term Term Term 
+            | TDummy 
             deriving (Show, Eq)
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
     data Var = Bound Int 
@@ -114,6 +120,7 @@ module LamPiHoasRealNat where
               | VNat 
               | VZero 
               | VSucc Val 
+              | VDummy 
 
 
     data Neut = NVar Var
@@ -123,6 +130,11 @@ module LamPiHoasRealNat where
 
     type Env = [Val] -- evaluation environment, variable assignments
 
+    vapp :: Val -> Val -> Val 
+    vapp (VLam _ _ f) x = f x
+    vapp (VNeut n) x = VNeut (NApp n x)
+    vapp _ _ = VDummy 
+
     eval :: Term -> Env -> Val 
     eval (BaseTy t) _ = VNeut (NVar (Free t)) 
     eval Star _ = VStar 
@@ -130,22 +142,24 @@ module LamPiHoasRealNat where
     eval (Var (Bound i)) env = env !! i
     eval (Var v) _ = VNeut (NVar v)
     eval (App e e') env = case eval e env of 
-        VNeut n -> VNeut (NApp n (eval e' env)) 
+        VNeut n -> VNeut (NApp n (eval e' env))
         VLam _ _ f -> f (eval e' env)
         VForall _ _ f -> f (eval e' env)
-        VStar -> error "applying Star"
+        _ -> error "undefined application"
     eval (Lam n t e) env = VLam n (eval t env) (\x -> eval e (x : env))
     eval TyNat _ = VNat 
     eval CZero _ = VZero 
     eval (CSucc n) env = VSucc (eval n env)
     eval (NatElim m mz ms k) env = case eval k env of
         VZero -> eval mz env 
-        VSucc l -> undefined -- vapp alternative -- or should i just get it lol 
-
-
+        VSucc l -> vapp (vapp (eval ms env) l) (eval (NatElim m mz ms (quote l)) env)
+        VNeut n -> VNeut (NNatElim (eval m env) (eval ms env) (eval mz env) n)
+        _ -> error "undefined natElim argument"
+    eval TDummy _ = VDummy
 
     type Type = Val 
-    type Ctx = [(String, Val)] -- typing context
+    type NameStore = [(String, Val)]
+    type Ctx = [Val] -- typing context
 
     type Tcm a = Either String a
 
@@ -164,58 +178,76 @@ module LamPiHoasRealNat where
     quote_ i (VForall n x f) = Forall n (quote_ i x) (quote_ (i+1) (f (VNeut (NVar (Bound i)))))
     quote_ i (VLam n x f) = Lam n (quote_ i x) (quote_ (i+1) (f (VNeut (NVar (Bound i)))))
     quote_ i (VNeut n) = quoteNeutral i n 
+    quote_ _ VNat = TyNat
+    quote_ _ VZero = CZero
+    quote_ i (VSucc v) = CSucc (quote_ i v) -- should we handle ill formed terms here hmm
+    quote_ _ VDummy = TDummy 
 
     quoteNeutral :: Int -> Neut -> Term
     quoteNeutral _ (NBaseTy str) = BaseTy str 
     quoteNeutral i (NApp n v) = App (quoteNeutral i n) (quote_ i v)
     quoteNeutral i (NVar (Quote x)) = Var (Bound (i - x - 1)) 
     quoteNeutral _ (NVar x) = Var x
+    quoteNeutral i (NNatElim m mz ms k) = NatElim (quote_ i m) (quote_ i mz) (quote_ i ms) (quoteNeutral i k)
 
     unify :: Val -> Val -> Bool
     unify a b = quote a == quote b
 
-    pTermToTerm :: PTerm -> [String] -> Term
-    pTermToTerm PStar _ = Star
-    pTermToTerm (PApp a b) ctx = App (pTermToTerm a ctx) (pTermToTerm b ctx)
-    pTermToTerm (PVar str) ctx = case elemIndex str ctx of 
-        Just i -> Var (Bound i)
-        Nothing -> Var (Free str)
-    pTermToTerm (PType str) _ = BaseTy str
-    pTermToTerm (PForall str t1 t2) ctx = Forall str (pTermToTerm t1 ctx) (pTermToTerm t2 (str : ctx))
-    pTermToTerm (PLam str t1 t2) ctx = Lam str (pTermToTerm t1 ctx) (pTermToTerm t2 (str : ctx))
+    typeinfer :: PTerm -> Ctx -> Tcm (Term, Type)
+    typeinfer PStar _ = Right (Star, VStar)
+    typeinfer (PVar str) ctx = undefined
+    typeinfer (PApp t1 t2) ctx = undefined
+    typeinfer (PLam x t e) ctx = undefined
+    typeinfer (PForall x t e) ctx = undefined 
+    typeinfer (PType str) ctx = Right (BaseTy str, VStar) 
+    typeinfer PNat _ = Right (TyNat, VStar)
+    typeinfer PZero _ = Right (CZero, VNat)
+    typeinfer (PSucc n) ctx = undefined
+    typeinfer (PNatElim m mz ms k) ctx = undefined 
+    typeinfer PDummy _ = Right (TDummy ,VDummy)
 
-    typeinfer :: Term -> Ctx -> Tcm Type
-    typeinfer (BaseTy _) _ = Right VStar  
-    typeinfer Star _ = Right VStar 
-    typeinfer (Forall x p p') ctx = case typeinfer p ctx of 
-        Right VStar -> let
-            t = eval p []
-            p'' = subst 0 (Var (Free x)) p' in 
-                case typeinfer p'' ((x, t) : ctx) of
-                    Right VStar -> Right VStar
-                    _ -> Left "could not infer a type for body of forall"
-        _ -> Left "could not infer a type for argument of forall"
-    typeinfer (Var (Free v)) ctx = case lookup v ctx of 
-        Just t -> Right t
-        Nothing -> Left "free variable not in context" 
-    typeinfer (Var _) _ = Left "bound variable in typeinfer"
-    typeinfer (App e e') ctx = case typeinfer e ctx of 
-        Right (VForall n t t') -> case typeinfer e' ctx of 
-            Right t_ | unify t t_ -> Right $ t' t -- do i need to eval here??
-            _ -> Left "could not infer e' in app"
-        _ -> Left "ill-typed application"
-    typeinfer (Lam x p e) ctx = let
-        tm = subst 0 (Var (Free x)) e 
-        t = eval p [] in 
-            case typeinfer tm ((x, t) : ctx) of 
-                Right t' -> Right $ eval (Forall x (quote t) (quote t')) []
-                _ -> Left "could not infer a type for body of lambda"
+
+    -- pTermToTerm :: PTerm -> [String] -> Term
+    -- pTermToTerm PStar _ = Star
+    -- pTermToTerm (PApp a b) ctx = App (pTermToTerm a ctx) (pTermToTerm b ctx)
+    -- pTermToTerm (PVar str) ctx = case elemIndex str ctx of 
+    --     Just i -> Var (Bound i)
+    --     Nothing -> Var (Free str)
+    -- pTermToTerm (PType str) _ = BaseTy str
+    -- pTermToTerm (PForall str t1 t2) ctx = Forall str (pTermToTerm t1 ctx) (pTermToTerm t2 (str : ctx))
+    -- pTermToTerm (PLam str t1 t2) ctx = Lam str (pTermToTerm t1 ctx) (pTermToTerm t2 (str : ctx))
+
+    -- typeinfer :: Term -> Ctx -> Tcm Type
+    -- typeinfer (BaseTy _) _ = Right VStar  
+    -- typeinfer Star _ = Right VStar 
+    -- typeinfer (Forall x p p') ctx = case typeinfer p ctx of 
+    --     Right VStar -> let
+    --         t = eval p []
+    --         p'' = subst 0 (Var (Free x)) p' in 
+    --             case typeinfer p'' ((x, t) : ctx) of
+    --                 Right VStar -> Right VStar
+    --                 _ -> Left "could not infer a type for body of forall"
+    --     _ -> Left "could not infer a type for argument of forall"
+    -- typeinfer (Var (Free v)) ctx = case lookup v ctx of 
+    --     Just t -> Right t
+    --     Nothing -> Left "free variable not in context" 
+    -- typeinfer (Var _) _ = Left "bound variable in typeinfer"
+    -- typeinfer (App e e') ctx = case typeinfer e ctx of 
+    --     Right (VForall n t t') -> case typeinfer e' ctx of 
+    --         Right t_ | unify t t_ -> Right $ t' t -- do i need to eval here??
+    --         _ -> Left "could not infer e' in app"
+    --     _ -> Left "ill-typed application"
+    -- typeinfer (Lam x p e) ctx = let
+    --     tm = subst 0 (Var (Free x)) e 
+    --     t = eval p [] in 
+    --         case typeinfer tm ((x, t) : ctx) of 
+    --             Right t' -> Right $ eval (Forall x (quote t) (quote t')) []
+    --             _ -> Left "could not infer a type for body of lambda" 
 
     process :: String -> Tcm (Val, Type) 
     process str = do
         ptm <- tmParse str 
-        let tm = pTermToTerm ptm []
-        ty <- typeinfer tm  []
+        (tm, ty) <- typeinfer ptm []
         let val = eval tm [] 
         pure (val, ty)
 
